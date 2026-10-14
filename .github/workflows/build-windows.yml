@@ -57,26 +57,21 @@ jobs:
 
       - name: 下载固定版本 WebView2 运行时
         shell: pwsh
+        # 微软 CDN 上的 .cab 路径带随版本变化的 GUID，无法按版本号拼出；
+        # NuGet 的 WebView2.Runtime.X64 包就是同一份固定版本运行时，地址由版本号唯一确定。
         run: |
           $ver = "${env:WEBVIEW2_VERSION}"
-          $url = "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/" +
-                 "$ver/Microsoft.WebView2.FixedVersionRuntime.$ver.x64.cab"
+          $url = "https://api.nuget.org/v3-flatcontainer/webview2.runtime.x64/$ver/webview2.runtime.x64.$ver.nupkg"
           Write-Host "下载 $url"
-          # 微软的固定版本运行时以 .cab 分发，解包后是一个可直接使用的目录
-          Invoke-WebRequest -Uri $url -OutFile webview2.cab -UseBasicParsing
-          New-Item -ItemType Directory -Force -Path src-tauri\webview2 | Out-Null
-          expand webview2.cab -F:* src-tauri\webview2 | Out-Null
-          # cab 解出来会多一层同名目录，拉平它，让 msedgewebview2.exe 落在 webview2\ 根下
-          $inner = Get-ChildItem src-tauri\webview2 -Directory |
-                   Where-Object { Test-Path (Join-Path $_.FullName "msedgewebview2.exe") } |
-                   Select-Object -First 1
-          if ($inner) {
-            Move-Item "$($inner.FullName)\*" src-tauri\webview2 -Force
-            Remove-Item $inner.FullName -Recurse -Force
-          }
-          if (-not (Test-Path src-tauri\webview2\msedgewebview2.exe)) {
+          Invoke-WebRequest -Uri $url -OutFile webview2.zip -UseBasicParsing
+          Expand-Archive webview2.zip -DestinationPath webview2-pkg -Force
+          # 运行时在包内的 contentFiles/any/any/WebView2/，msedgewebview2.exe 直接位于该目录根下
+          $src = "webview2-pkg/contentFiles/any/any/WebView2"
+          if (-not (Test-Path "$src\msedgewebview2.exe")) {
             throw "WebView2 运行时解包失败：找不到 msedgewebview2.exe"
           }
+          New-Item -ItemType Directory -Force -Path src-tauri\webview2 | Out-Null
+          Copy-Item "$src\*" src-tauri\webview2 -Recurse -Force
           Write-Host "WebView2 就绪：$((Get-ChildItem src-tauri\webview2 -Recurse | Measure-Object Length -Sum).Sum / 1MB) MB"
 
       - name: 编译
