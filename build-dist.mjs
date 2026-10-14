@@ -22,7 +22,8 @@ const sibling = resolve(here, "pm-dashboard-v2.html");
 const SRC = process.argv[2] || (existsSync(sibling) ? sibling : resolve(here, "../pm-dashboard-v2.html"));
 const OUT = resolve(here, "dist/index.html");
 
-let html = readFileSync(SRC, "utf8");
+// Windows 上 git 检出可能把 LF 转成 CRLF，而下面的锚点字符串都按 LF 写，所以先统一
+let html = readFileSync(SRC, "utf8").replace(/\r\n/g, "\n");
 const before = html.length;
 
 function must(condition, message) {
@@ -58,7 +59,7 @@ html = html.replace(
 
 /* ---- 2. inject the storage bridge before the application script --------------------- */
 // It must run before the app, which reads window.storage during start-up.
-const bridge = readFileSync(resolve(here, "dist/desktop-bridge.js"), "utf8");
+const bridge = readFileSync(resolve(here, "dist/desktop-bridge.js"), "utf8").replace(/\r\n/g, "\n");
 const appScript = html.indexOf('<script>\n(function(){\n"use strict";');
 must(appScript !== -1, "找不到主程序脚本的起始位置");
 html =
