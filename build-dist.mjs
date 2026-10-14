@@ -12,12 +12,14 @@
  *   3. disable the browser context menu and text selection chrome that make a desktop window
  *      feel like a web page
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SRC = process.argv[2] || resolve(here, "../pm-dashboard-v2.html");
+// 仓库内（含 CI）网页版与本脚本同级；旧的本地目录布局里它在上一级，保留为回退
+const sibling = resolve(here, "pm-dashboard-v2.html");
+const SRC = process.argv[2] || (existsSync(sibling) ? sibling : resolve(here, "../pm-dashboard-v2.html"));
 const OUT = resolve(here, "dist/index.html");
 
 let html = readFileSync(SRC, "utf8");
