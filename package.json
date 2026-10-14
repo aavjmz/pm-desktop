@@ -1,0 +1,14 @@
+{
+  "name": "milestone-command-desktop",
+  "version": "2.0.0",
+  "private": true,
+  "description": "项目里程碑指挥台 — Windows 桌面版",
+  "scripts": {
+    "dist": "node build-dist.mjs",
+    "test:core": "cd core && cargo test",
+    "dev": "npm run dist && cd src-tauri && cargo run",
+    "build": "npm run dist && cd src-tauri && cargo build --release",
+    "test:e2e": "node tests/e2e-desktop.cjs",
+    "verify": "npm run test:core && npm run dist && npm run test:e2e"
+  }
+}

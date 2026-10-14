@@ -1,0 +1,7 @@
+target/
+dist/index.html
+dist-portable/
+src-tauri/webview2/
+*.cab
+*.zip
+node_modules/

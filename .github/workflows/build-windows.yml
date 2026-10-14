@@ -1,0 +1,141 @@
+name: 构建 Windows 绿色版
+
+# 产出一个解压即用的便携包：exe + 固定版本 WebView2 + 数据目录。
+# 目标机器是公司管控的 Win10，可能既没有 Evergreen WebView2 运行时，也没有安装权限，
+# 所以运行时整个打进包里，程序不依赖系统更新也不需要管理员权限。
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:        # 也可以在 Actions 页面手动点一下就出包
+
+permissions:
+  contents: write           # 打 tag 时创建 Release 用
+
+env:
+  # 固定版本 WebView2。换版本只改这里；版本号可在
+  # https://developer.microsoft.com/microsoft-edge/webview2/ 查到。
+  WEBVIEW2_VERSION: "131.0.2903.112"
+
+jobs:
+  # 数据层不依赖任何 GUI 库，放在 Linux 上跑，几十秒就能挡住会毁数据的改动，
+  # 不用等 Windows runner。
+  test-core:
+    name: 数据层单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: cargo test
+        working-directory: core
+        run: cargo test --verbose
+
+  build:
+    name: 打包
+    needs: test-core
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 由网页版生成桌面版前端
+        run: node build-dist.mjs
+
+      - name: 下载固定版本 WebView2 运行时
+        shell: pwsh
+        run: |
+          $ver = "${env:WEBVIEW2_VERSION}"
+          $url = "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/" +
+                 "$ver/Microsoft.WebView2.FixedVersionRuntime.$ver.x64.cab"
+          Write-Host "下载 $url"
+          # 微软的固定版本运行时以 .cab 分发，解包后是一个可直接使用的目录
+          Invoke-WebRequest -Uri $url -OutFile webview2.cab -UseBasicParsing
+          New-Item -ItemType Directory -Force -Path src-tauri\webview2 | Out-Null
+          expand webview2.cab -F:* src-tauri\webview2 | Out-Null
+          # cab 解出来会多一层同名目录，拉平它，让 msedgewebview2.exe 落在 webview2\ 根下
+          $inner = Get-ChildItem src-tauri\webview2 -Directory |
+                   Where-Object { Test-Path (Join-Path $_.FullName "msedgewebview2.exe") } |
+                   Select-Object -First 1
+          if ($inner) {
+            Move-Item "$($inner.FullName)\*" src-tauri\webview2 -Force
+            Remove-Item $inner.FullName -Recurse -Force
+          }
+          if (-not (Test-Path src-tauri\webview2\msedgewebview2.exe)) {
+            throw "WebView2 运行时解包失败：找不到 msedgewebview2.exe"
+          }
+          Write-Host "WebView2 就绪：$((Get-ChildItem src-tauri\webview2 -Recurse | Measure-Object Length -Sum).Sum / 1MB) MB"
+
+      - name: 编译
+        working-directory: src-tauri
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: 组装绿色版
+        shell: pwsh
+        run: |
+          $out = "dist-portable\项目里程碑指挥台"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item "src-tauri\target\x86_64-pc-windows-msvc\release\milestone-command.exe" `
+                    (Join-Path $out "项目里程碑指挥台.exe")
+          # 运行时放在 exe 旁边的 webview2\，main.rs 启动时会指向这里
+          Copy-Item "src-tauri\webview2" (Join-Path $out "webview2") -Recurse
+          # 预建数据目录：解压后第一次运行就知道数据写在哪
+          New-Item -ItemType Directory -Force -Path (Join-Path $out "data") | Out-Null
+          Copy-Item "PORTABLE-README.txt" (Join-Path $out "使用说明.txt") -ErrorAction SilentlyContinue
+
+          $exe = Get-Item (Join-Path $out "项目里程碑指挥台.exe")
+          $total = (Get-ChildItem $out -Recurse | Measure-Object Length -Sum).Sum
+          Write-Host ("主程序 {0:N2} MB，整包 {1:N0} MB" -f ($exe.Length/1MB), ($total/1MB))
+
+          Compress-Archive -Path "dist-portable\*" -DestinationPath "项目里程碑指挥台-绿色版-win64.zip"
+
+      - name: 冒烟测试 — 程序能否真正启动
+        shell: pwsh
+        # 一个编译通过但一启动就崩的 exe 没有意义。这里真的把它拉起来，
+        # 确认进程活着、WebView2 子进程被拉起、并且在数据目录里写出了文件。
+        run: |
+          $app = "dist-portable\项目里程碑指挥台\项目里程碑指挥台.exe"
+          $p = Start-Process $app -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) { throw "程序启动后立即退出，退出码 $($p.ExitCode)" }
+          $wv = Get-Process msedgewebview2 -ErrorAction SilentlyContinue
+          if (-not $wv) { throw "WebView2 进程未启动——固定版本运行时可能没被正确加载" }
+          $mem = ($p.WorkingSet64 + ($wv | Measure-Object WorkingSet64 -Sum).Sum) / 1MB
+          Write-Host ("进程常驻内存合计 {0:N0} MB" -f $mem)
+          $data = Get-ChildItem "dist-portable\项目里程碑指挥台\data" -ErrorAction SilentlyContinue
+          if (-not $data) { throw "数据目录为空——存储没有写成功" }
+          Write-Host "数据目录已写入：$($data.Name -join ', ')"
+          Stop-Process -Id $p.Id -Force
+          Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 项目里程碑指挥台-绿色版-win64
+          path: 项目里程碑指挥台-绿色版-win64.zip
+          retention-days: 30
+
+      - name: 打 tag 时发布 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: 项目里程碑指挥台-绿色版-win64.zip
+          body: |
+            解压到任意有写权限的目录，双击「项目里程碑指挥台.exe」即可运行。
+
+            - 免安装，不写注册表，不需要管理员权限
+            - 自带 WebView2 运行时，不依赖系统更新
+            - 数据存在 `data\` 子目录，整个文件夹拷走即可换机器
+            - 每次保存自动保留最近 10 个版本备份，在 `data\backups\`

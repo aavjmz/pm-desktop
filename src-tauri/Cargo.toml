@@ -1,0 +1,25 @@
+[package]
+name = "milestone-command"
+version = "2.0.0"
+description = "项目里程碑指挥台"
+authors = ["ddz"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+milestone-core = { path = "../core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+panic = "abort"      # no unwinding machinery
+codegen-units = 1    # better optimisation at the cost of build time
+lto = true           # whole-program optimisation
+opt-level = "s"      # favour size; the hot work happens in the webview, not here
+strip = true         # drop symbols

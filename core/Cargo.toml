@@ -1,0 +1,11 @@
+[package]
+name = "milestone-core"
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.77"
+description = "项目里程碑指挥台 — 平台无关的数据层"
+
+# No Tauri, no GUI toolkit: this crate builds and tests on any OS, so the storage logic that
+# holds the user's only copy of their plans is covered by CI on every push, not just on the
+# Windows runner that produces the exe.
+[dependencies]
