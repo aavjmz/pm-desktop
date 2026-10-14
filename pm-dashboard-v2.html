@@ -704,7 +704,8 @@ var TPL_KEY = "pm_dashboard_v2_templates";
    plan within a workable width. */
 var DAY_W = 26;
 var DAY_W_STEPS = [26, 18, 12, 8, 5, 3, 2, 1];
-var TL_MAX_CANVAS = 9000;      // px; past roughly this width the drag starts dropping frames
+var TL_SANE_DAYS = 3653;       // tasks more than ~10 years from today are treated as mistyped dates
+var TL_MAX_CANVAS = 9000;     // px; past roughly this width the drag starts dropping frames
 function pickDayWidth(totalDays){
   var z = state.zoom;
   if(z && z !== "fit"){
@@ -3664,8 +3665,19 @@ function tlBarHtml(m, color, range, cpm, cpActive, conflictIds){
 
 function renderTimelineTab(conflictsInfo){
   var filtered = state.milestones.filter(function(m){ return passesFilter(m) && taskProjectVisible(m) && taskPassesDoneFilter(m); });
-  var visible = filtered.filter(function(m){ return m.start && m.end; });
-  var unscheduledCount = filtered.length - visible.length;
+  var scheduled = filtered.filter(function(m){ return m.start && m.end; });
+  var unscheduledCount = filtered.length - scheduled.length;
+  // One task with a mistyped year (0226, 2300…) used to stretch the range to hundreds of
+  // years: a canvas millions of pixels wide plus one background node per off-day, which is
+  // both what froze the page and what pushed every real bar out of sight. Tasks far from
+  // today are kept off the timeline and reported, so the person can go and fix the date.
+  var saneLo = addDays(todayISO(), -TL_SANE_DAYS), saneHi = addDays(todayISO(), TL_SANE_DAYS);
+  var badDateTasks = [];
+  var visible = scheduled.filter(function(m){
+    if(m.start >= saneLo && m.end <= saneHi) return true;
+    badDateTasks.push(m);
+    return false;
+  });
   var range = getTimelineRange(visible);
   var totalDays = daysBetween(range.start, range.end) + 1;
   DAY_W = pickDayWidth(totalDays);
@@ -3795,6 +3807,11 @@ function renderTimelineTab(conflictsInfo){
       '</div>' +
     '</div>' +
     '<div class="filter-summary">显示 ' + visible.length + ' / ' + state.milestones.length + ' 个任务' + (unscheduledCount > 0 ? '（另有 ' + unscheduledCount + ' 个未排期任务，可在项目列表中设置日期）' : '') + '</div>' +
+    (badDateTasks.length > 0
+      ? '<div class="filter-summary" style="color:var(--accent-warn);">⚠ ' + badDateTasks.length + ' 个任务的日期偏离今天 10 年以上，疑似填错，已不在时间线显示：' +
+        badDateTasks.slice(0, 5).map(function(m){ return escapeHtml(projName(m.projectId)) + "·" + escapeHtml(m.title) + "（" + m.start + " ~ " + m.end + "）"; }).join("；") +
+        (badDateTasks.length > 5 ? " 等" : "") + '，请到项目列表修正日期</div>'
+      : '') +
     '<div class="timeline-table" id="timelineTable">' +
       dayBgLayer +
       '<svg class="dep-svg" id="depSvg" width="' + totalWidth + '" style="left:172px;"></svg>' +
