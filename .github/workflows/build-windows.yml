@@ -1,13 +1,23 @@
 name: 构建 Windows 绿色版
 
-# 产出一个解压即用的便携包：exe + 固定版本 WebView2 + 数据目录。
+# 产出便携包：exe + 数据目录，以及固定版本 WebView2 运行时。
 # 目标机器是公司管控的 Win10，可能既没有 Evergreen WebView2 运行时，也没有安装权限，
-# 所以运行时整个打进包里，程序不依赖系统更新也不需要管理员权限。
+# 所以运行时随包提供，程序不依赖系统更新也不需要管理员权限。
+#
+# 运行时约 250 MB 而程序只有几 MB，且运行时版本很少变，所以拆成两个包：
+#   程序包   —— 每次都产出，几 MB
+#   运行时包 —— 只在打 tag 或手动勾选时产出，下载一次放到程序旁即可长期复用
+# 两个包的顶层目录相同，解压到同一位置会自动合并。
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:        # 也可以在 Actions 页面手动点一下就出包
+    inputs:
+      with_runtime:
+        description: "同时产出 WebView2 运行时包（约 250 MB，首次部署或升级运行时才需要）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write           # 打 tag 时创建 Release 用
@@ -95,8 +105,6 @@ jobs:
           $total = (Get-ChildItem $out -Recurse | Measure-Object Length -Sum).Sum
           Write-Host ("主程序 {0:N2} MB，整包 {1:N0} MB" -f ($exe.Length/1MB), ($total/1MB))
 
-          Compress-Archive -Path "dist-portable\*" -DestinationPath "项目里程碑指挥台-绿色版-win64.zip"
-
       - name: 冒烟测试 — 程序能否真正启动
         shell: pwsh
         # 一个编译通过但一启动就崩的 exe 没有意义。这里真的把它拉起来，
@@ -116,21 +124,62 @@ jobs:
           Stop-Process -Id $p.Id -Force
           Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
 
+      # 打包放在冒烟测试之后：测试会往 data\ 里写文件，不能把它们带进发布包。
+      - name: 拆分打包（程序包 / 运行时包）
+        shell: pwsh
+        run: |
+          $name = "项目里程碑指挥台"
+          $full = "dist-portable\$name"
+
+          # 程序包：exe + 空数据目录 + 说明，不含 webview2
+          $app = "dist-app\$name"
+          New-Item -ItemType Directory -Force -Path "$app\data" | Out-Null
+          Copy-Item "$full\$name.exe" $app
+          Copy-Item "$full\使用说明.txt" $app -ErrorAction SilentlyContinue
+          Compress-Archive -Path "dist-app\*" -DestinationPath "$name-程序包-win64.zip"
+
+          # 运行时包：只含 webview2\，解压到程序旁边即可
+          $withRuntime = ("${{ github.event.inputs.with_runtime }}" -eq "true") -or ("${{ github.ref }}" -like "refs/tags/v*")
+          if ($withRuntime) {
+            $rt = "dist-runtime\$name"
+            New-Item -ItemType Directory -Force -Path $rt | Out-Null
+            Copy-Item "$full\webview2" $rt -Recurse
+            Compress-Archive -Path "dist-runtime\*" -DestinationPath "$name-WebView2运行时-$env:WEBVIEW2_VERSION-win64.zip"
+          }
+          "WITH_RUNTIME=$withRuntime" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          Get-ChildItem *.zip | ForEach-Object { Write-Host ("{0}  {1:N1} MB" -f $_.Name, ($_.Length/1MB)) }
+
       - uses: actions/upload-artifact@v4
         with:
-          name: 项目里程碑指挥台-绿色版-win64
-          path: 项目里程碑指挥台-绿色版-win64.zip
+          name: 项目里程碑指挥台-程序包-win64
+          path: 项目里程碑指挥台-程序包-win64.zip
           retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: env.WITH_RUNTIME == 'True'
+        with:
+          name: 项目里程碑指挥台-WebView2运行时-win64
+          path: 项目里程碑指挥台-WebView2运行时-*.zip
+          retention-days: 90
+          compression-level: 0     # zip 已经压缩过，再压一遍只是浪费时间
 
       - name: 打 tag 时发布 Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: 项目里程碑指挥台-绿色版-win64.zip
+          files: |
+            项目里程碑指挥台-程序包-win64.zip
+            项目里程碑指挥台-WebView2运行时-*.zip
           body: |
-            解压到任意有写权限的目录，双击「项目里程碑指挥台.exe」即可运行。
+            ## 首次部署
+            两个包都下载，解压到**同一个**有写权限的目录（会自动合并到同一个文件夹），
+            双击「项目里程碑指挥台.exe」即可运行。
+
+            ## 之后升级
+            只需要下载「程序包」，覆盖解压即可；`data\` 里的数据不会被动。
+            WebView2 运行时包只有在升级运行时版本时才需要重新下载。
 
             - 免安装，不写注册表，不需要管理员权限
-            - 自带 WebView2 运行时，不依赖系统更新
             - 数据存在 `data\` 子目录，整个文件夹拷走即可换机器
             - 每次保存自动保留最近 10 个版本备份，在 `data\backups\`
