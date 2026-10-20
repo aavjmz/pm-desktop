@@ -295,15 +295,11 @@ input,select{font-family:inherit;}
 .ms-toggle-field{margin-top:-4px;}
 .ms-toggle.disabled{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px dashed var(--grid-line-strong);border-radius:9px;opacity:0.6;cursor:not-allowed;}
 .ms-toggle.disabled .ms-check{background:var(--bg-panel);color:var(--text-dim);}
-.tree-branch{color:var(--text-dim);font-size:11px;flex:0 0 auto;margin-right:-2px;}
-.ms-row.lvl-2{background:linear-gradient(to right, var(--bg-raised) 0 2px, transparent 2px);}
-.ms-row.lvl-3{background:linear-gradient(to right, var(--bg-raised) 0 2px, transparent 2px);}
-.ms-row.lvl-4{background:linear-gradient(to right, var(--bg-raised) 0 2px, transparent 2px);}
 .ms-row .ms-title{cursor:pointer;}
 .sub-add{background:transparent;border:1px solid var(--grid-line-strong);color:var(--text-secondary);
   border-radius:6px;font-size:10.5px;padding:2px 7px;flex:0 0 auto;font-family:var(--font-mono);
   opacity:0;transition:opacity .12s, border-color .12s, color .12s;}
-.ms-row:hover .sub-add{opacity:1;}
+.ms-row:hover .sub-add, .kb-row:hover .sub-add{opacity:1;}
 .sub-add:hover{border-color:var(--accent-ok);color:var(--accent-ok);}
 .parent-bar{display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:14px;
   border:1px solid var(--accent-ok);border-radius:8px;background:var(--bg-raised-2);}
@@ -466,7 +462,7 @@ input,select{font-family:inherit;}
    layout for the ones scrolled out of view is what keeps these tabs responsive once there
    are dozens of projects. Not applied to .tl-row: the dependency connectors measure bar
    offsets, which a skipped subtree does not report. */
-.proj-card{content-visibility:auto;contain-intrinsic-size:auto 420px;}
+.proj-card{content-visibility:auto;contain-intrinsic-size:auto 480px;}
 .owner-panel{content-visibility:auto;contain-intrinsic-size:auto 320px;}
 .pl-table-wrap{contain:layout style;}
 .day-bg-layer{position:absolute;top:0;bottom:0;left:172px;z-index:1;pointer-events:none;}
@@ -512,7 +508,7 @@ input,select{font-family:inherit;}
   display:flex;align-items:center;height:38px;}
 
 /* ===== project / owner cards ===== */
-.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;}
 .proj-card{background:var(--bg-panel);border:1px solid var(--grid-line);border-radius:10px;overflow:hidden;}
 .proj-card .bar-top{height:4px;}
 .proj-card .head{padding:14px 16px 10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
@@ -533,6 +529,33 @@ input,select{font-family:inherit;}
 .pill.in_progress{background:rgba(62,214,181,0.16);color:var(--accent-ok);}
 .pill.done{background:rgba(91,141,239,0.16);color:#8DB0FF;}
 .pill.delayed{background:rgba(240,169,59,0.16);color:var(--accent-warn);}
+/* board (kanban) task rows: two lines, title gets the full width */
+.kb-row{position:relative;display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:7px;}
+.kb-row:hover{background:var(--bg-raised);}
+.kb-row.conflict{background:var(--accent-crit-bg);}
+.kb-row:not(.lvl-1){border-left:1px solid var(--grid-line-strong);border-radius:0 7px 7px 0;}
+.kb-row.lvl-1 + .kb-row.lvl-1{margin-top:2px;}
+.st-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;margin-top:5px;background:var(--text-dim);}
+.st-dot.in_progress{background:var(--accent-ok);}
+.st-dot.done{background:#8DB0FF;}
+.st-dot.delayed{background:var(--accent-warn);}
+.kb-body{flex:1 1 auto;min-width:0;}
+.kb-title{cursor:pointer;font-size:12.5px;line-height:1.45;word-break:break-word;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;}
+.kb-row.lvl-1 .kb-title{font-size:13px;font-weight:600;}
+.kb-title:hover{color:var(--accent-ok);}
+.kb-row.st-done .kb-title{color:var(--text-secondary);}
+.kb-meta{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:2px;font-family:var(--font-mono);font-size:10.5px;color:var(--text-dim);}
+.kb-st.in_progress{color:var(--accent-ok);}
+.kb-st.done{color:#8DB0FF;}
+.kb-st.delayed{color:var(--accent-warn);}
+.kb-owner{color:var(--text-secondary);}
+.kb-warn{color:var(--accent-crit);}
+.kb-row .sub-add{position:absolute;top:5px;right:6px;background:var(--bg-panel);}
+.kb-progress{margin-top:8px;}
+.kb-progress-txt{font-family:var(--font-mono);font-size:10.5px;color:var(--text-dim);}
+.kb-progress-bar{height:3px;border-radius:2px;background:var(--bg-raised);margin-top:4px;overflow:hidden;}
+.kb-progress-bar span{display:block;height:100%;}
 .card-foot{padding:8px 16px 14px;}
 .empty-note{color:var(--text-dim);font-size:12.5px;padding:6px 16px 14px;font-family:var(--font-mono);}
 
@@ -4097,22 +4120,38 @@ function renderProjectsTab(conflictsInfo){
             ? (fmtShort(m.start) + '–' + fmtShort(m.end) + ' · ' + (m.workdays || countWorkdays(m.start, m.end)) + '工日')
             : '未排期 · ' + (m.workdays || 1) + '工日';
           var canAddChild = (lvl < MAX_TASK_DEPTH);
-          var indent = (lvl - 1) * 16;
-          return '<div class="ms-row lvl-' + lvl + (isConflict ? " conflict" : "") + '" style="padding-left:' + (8 + indent) + 'px;">' +
-            (lvl > 1 ? '<span class="tree-branch">↳</span>' : '') +
-            '<span class="pill ' + m.status + '">' + STATUS_LABEL[m.status] + '</span>' +
-            '<span class="ms-title" data-open-ms="' + m.id + '">' + (m.isMilestone ? '<span class="ms-tag">◆</span>' : '') + escapeHtml(m.title) + '</span>' +
-            (m.owner ? '<span class="ms-owner">' + escapeHtml(m.owner) + '</span>' : '') +
-            '<span class="ms-dates">' + datesTxt + '</span>' +
-            (isConflict ? '<span style="color:var(--accent-crit);font-size:12px;">⚠</span>' : '') +
+          // Two-line row: status dot + wrapping title on top, mono meta line below.
+          // Indent per level is kept small; the left guide line marks nesting.
+          return '<div class="kb-row lvl-' + lvl + ' st-' + m.status + (isConflict ? " conflict" : "") + '" style="margin-left:' + ((lvl - 1) * 12) + 'px;">' +
+            '<span class="st-dot ' + m.status + '" title="' + STATUS_LABEL[m.status] + '"></span>' +
+            '<div class="kb-body">' +
+              '<div class="kb-title" data-open-ms="' + m.id + '" title="' + escapeHtml(m.title) + '">' +
+                (m.isMilestone ? '<span class="ms-tag">◆</span>' : '') + escapeHtml(m.title) + '</div>' +
+              '<div class="kb-meta">' +
+                '<span class="kb-st ' + m.status + '">' + STATUS_LABEL[m.status] + '</span>' +
+                '<span>' + datesTxt + '</span>' +
+                (m.owner ? '<span class="kb-owner">' + escapeHtml(m.owner) + '</span>' : '') +
+                (isConflict ? '<span class="kb-warn">⚠ 冲突</span>' : '') +
+              '</div>' +
+            '</div>' +
             (canAddChild ? '<button class="sub-add" data-add-sub="' + m.id + '" title="添加子任务（第 ' + (lvl+1) + ' 级）">＋子</button>' : '') +
             '</div>';
         }).join("");
+    var doneCount = tree.filter(function(n){ return n.task.status === "done"; }).length;
+    var totalWd = tree.reduce(function(s,n){ return s + (n.task.workdays || 0); }, 0);
+    var pct = tree.length ? Math.round(doneCount * 100 / tree.length) : 0;
+    var progressHtml = tree.length
+      ? '<div class="kb-progress">' +
+          '<div class="kb-progress-txt">已完成 ' + doneCount + '/' + tree.length + ' · 共 ' + totalWd + ' 工日</div>' +
+          '<div class="kb-progress-bar"><span style="width:' + pct + '%;background:' + p.color + ';"></span></div>' +
+        '</div>'
+      : '';
     return '<div class="proj-card' + (projStatus(p) === "archived" || projStatus(p) === "paused" ? " proj-inactive" : "") + '">' +
       '<div class="bar-top" style="background:' + p.color + ';"></div>' +
       '<div class="head">' +
-        '<div><h3>' + escapeHtml(p.name) + ' <span class="proj-status-badge ps-' + projStatus(p) + '">' + PROJ_STATUS_LABEL[projStatus(p)] + '</span></h3>' +
-        '<div class="meta">' + [escapeHtml(p.client), escapeHtml(p.platform)].filter(Boolean).join(" · ") + '</div></div>' +
+        '<div style="min-width:0;flex:1;"><h3>' + escapeHtml(p.name) + ' <span class="proj-status-badge ps-' + projStatus(p) + '">' + PROJ_STATUS_LABEL[projStatus(p)] + '</span></h3>' +
+        '<div class="meta">' + [escapeHtml(p.client), escapeHtml(p.platform)].filter(Boolean).join(" · ") + '</div>' +
+        progressHtml + '</div>' +
         '<div class="actions"><button class="btn ghost small" data-edit-proj="' + p.id + '">编辑</button></div>' +
       '</div>' +
       '<div class="ms-list">' + rows + '</div>' +
